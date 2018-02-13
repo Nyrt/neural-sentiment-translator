@@ -113,7 +113,7 @@ filter_sizes = map(int, '3,4,5'.split(','))
 validate_every = len(y_train) / (batch_size * valid_freq)
 checkpoint_every = len(y_train) / (batch_size * checkpoint_freq)
 
-device = '/gpu:0'
+device = '/cpu:0'
 sess = tf.InteractiveSession()
 
 
