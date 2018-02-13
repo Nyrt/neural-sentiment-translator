@@ -6,13 +6,32 @@ import numpy as np
 import sys
 from tensorflow.python.framework.graph_util import convert_variables_to_constants
 from tqdm import tqdm
+import time
+import os
+
 
 
 
 tf.flags.DEFINE_string('load', None,
                        'Restore a model from the given path.')
+tf.flags.DEFINE_string('custom_input', '',
+                       'Evaluate the model on the given string.')
 FLAGS = tf.flags.FLAGS
-FLAGS(sys.argv)
+#FLAGS(sys.argv)
+
+OUT_DIR = os.path.abspath(os.path.join(os.path.curdir, 'output'))
+if FLAGS.load is not None:
+    # Use logfile and checkpoint from given path
+    RUN_DIR = FLAGS.load
+    LOG_FILE_PATH = os.path.abspath(os.path.join(RUN_DIR, 'log.log'))
+    CHECKPOINT_FILE_PATH = os.path.abspath(os.path.join(RUN_DIR, 'ckpt.ckpt'))
+else:
+    RUN_ID = time.strftime('run%Y%m%d-%H%M%S')
+    RUN_DIR = os.path.abspath(os.path.join(OUT_DIR, RUN_ID))
+    # LOG_FILE_PATH = os.path.abspath(os.path.join(RUN_DIR, 'log.log'))
+    CHECKPOINT_FILE_PATH = os.path.abspath(os.path.join(RUN_DIR, 'ckpt.ckpt'))
+    os.mkdir(RUN_DIR)
+SUMMARY_DIR = os.path.join(RUN_DIR, 'summaries')
 
 #Architecture adapted from https://github.com/danielegrattarola/twitter-sentiment-cnn
 
@@ -78,7 +97,7 @@ def index(word):
     return vocab_inv["<UNK>"]
 
 def build_data(x_pos, x_neg):
-    x= np.matrix([np.array([index(word) for word in sentence] 
+    x= np.array([np.array([index(word) for word in sentence] 
                             + [vocab_inv["<PAD>"]]*(sequence_length - len(sentence)))
                             for sentence in (x_pos + x_neg)])
 
@@ -91,6 +110,9 @@ def build_data(x_pos, x_neg):
 x_train, y_train = build_data(train_pos, train_neg)
 
 # print x_train.shape
+# print y_train.shape
+
+# print x_train.shape
 # print x_train[0]
 
 x_test, y_test = build_data(test_pos, train_pos)
@@ -101,7 +123,7 @@ x_test, y_test = build_data(test_pos, train_pos)
 
 batch_size = 128
 valid_freq = 1
-checkpoint_freq = 100
+checkpoint_freq = 1
 embedding_size = 100
 num_filters = 128
 epochs = 3
@@ -243,6 +265,26 @@ tf.summary.merge_all()
 
 ########### Training ###############
 
+def batch_iter(data, batch_size, num_epochs):
+    """
+    Generates a batch iterator for a dataset.
+    """
+    data = np.array(data)
+    # print data.shape
+    # print data[0]
+    data_size = len(data)
+    num_batches_per_epoch = int(len(data)/batch_size) + 1
+    for epoch in range(num_epochs):
+        # Shuffle the data at each epoch
+        shuffle_indices = np.random.permutation(np.arange(data_size))
+        shuffled_data = data[shuffle_indices]
+        for batch_num in range(num_batches_per_epoch):
+            start_index = batch_num * batch_size
+            end_index = min((batch_num + 1) * batch_size, data_size)
+            #print shuffled_data[start_index:end_index].shape
+            yield shuffled_data[start_index:end_index]
+
+print "Generating batches"
 batches = batch_iter(zip(x_train, y_train), batch_size, epochs)
 test_batches = list(batch_iter(zip(x_test, y_test), batch_size, 1))
 my_batch = batches.next()  # To use with human_readable_output()
@@ -349,3 +391,40 @@ mean_loss_result, loss_summary_result = sess.run(
 # Write summaries
 summary_writer.add_summary(accuracy_summary_result, global_step)
 summary_writer.add_summary(loss_summary_result, global_step)
+
+def evaluate_sentence(sentence, vocabulary):
+    """
+    Translates a string to its equivalent in the integer vocabulary and feeds it
+    to the network.
+    Outputs result to stdout.
+    """
+    x_to_eval = string_to_int(sentence, vocabulary, max(len(_) for _ in x))
+    result = sess.run(tf.argmax(network_out, 1),
+                      feed_dict={data_in: x_to_eval,
+                                 dropout_keep_prob: 1.0})
+    unnorm_result = sess.run(network_out, feed_dict={data_in: x_to_eval,
+                                                     dropout_keep_prob: 1.0})
+    network_sentiment = 'POS' if result == 1 else 'NEG'
+    print network_sentiment, unnorm_result
+    #log('Custom input evaluation:', network_sentiment)
+    #log('Actual output:', str(unnorm_result[0]))
+
+def get_word_grads(sentence, vocabulary):
+    """
+    Translates a string to its equivalent in the integer vocabulary and feeds it
+    to the network.
+    Outputs result to stdout.
+    """
+    x_to_eval = string_to_int(sentence, vocabulary, max(len(_) for _ in x))
+    result = sess.run(tf.argmax(network_out, 1),
+                      feed_dict={data_in: x_to_eval,
+                                 dropout_keep_prob: 1.0})
+    unnorm_result = sess.run(network_out, feed_dict={data_in: x_to_eval,
+                                                     dropout_keep_prob: 1.0})
+    network_sentiment = 'POS' if result == 1 else 'NEG'
+    print network_sentiment, unnorm_result
+    #log('Custom input evaluation:', network_sentiment)
+    #log('Actual output:', str(unnorm_result[0]))
+
+if FLAGS.custom_input != '':
+    evaluate_sentence(FLAGS.custom_input, vocabulary)
