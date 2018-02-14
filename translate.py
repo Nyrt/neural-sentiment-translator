@@ -124,7 +124,7 @@ x_test, y_test = build_data(test_pos, train_pos)
 batch_size = 128
 valid_freq = 1
 checkpoint_freq = 1
-embedding_size = 100
+embedding_size = 128
 num_filters = 128
 epochs = 3
 
@@ -239,6 +239,8 @@ with tf.device(device):
     # Validation ops
     valid_mean_accuracy = tf.reduce_mean(valid_accuracies)
     valid_mean_loss = tf.reduce_mean(valid_losses)
+
+
 
 # Init session
 if FLAGS.load is not None:
@@ -409,17 +411,25 @@ def evaluate_sentence(sentence, vocabulary):
     #log('Custom input evaluation:', network_sentiment)
     #log('Actual output:', str(unnorm_result[0]))
 
-def get_word_grads(sentence, vocabulary):
+def get_word_grads(sentence, vocabulary, target):
     """
     Translates a string to its equivalent in the integer vocabulary and feeds it
     to the network.
     Outputs result to stdout.
     """
     x_to_eval = string_to_int(sentence, vocabulary, max(len(_) for _ in x))
+    feed_dict = {data_in: x_to_eval,
+                 data_out: target,
+                 dropout_keep_prob: 1.0}
+
+    grad = tf.gradients(accuracy, embedded_chars) # behold the power of automatic differentiation!
+
+
+
     result = sess.run(tf.argmax(network_out, 1),
                       feed_dict={data_in: x_to_eval,
                                  dropout_keep_prob: 1.0})
-    unnorm_result = sess.run(network_out, feed_dict={data_in: x_to_eval,
+    unnorm_result = sess.run(network_out, feed_dict={data_in: feed_dict,
                                                      dropout_keep_prob: 1.0})
     network_sentiment = 'POS' if result == 1 else 'NEG'
     print network_sentiment, unnorm_result
