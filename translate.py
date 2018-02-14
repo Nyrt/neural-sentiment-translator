@@ -121,19 +121,27 @@ def index(word):
     return vocab_inv["<UNK>"]
 
 def build_data(x_pos, x_neg):
-    x= [np.array([wordvec_model.wv[word] for word in sentence if word in wordvec_model.wv])
-                            for sentence in (x_pos + x_neg)]
+    x_pos = [np.array([wordvec_model.wv[word] for word in sentence if word in wordvec_model.wv])
+                            for sentence in (x_pos)]
 
-    # print x[0].shape
-    # print np.repeat(x[0][-1, :][None, :], sequence_length - x[0].shape[0], 0).shape
+    x_neg = [np.array([wordvec_model.wv[word] for word in sentence if word in wordvec_model.wv])
+                            for sentence in (x_neg)]
 
-    # Pad sentence by repeating the last word vector
-    x = np.array([np.vstack((sentence, np.repeat(sentence[-1, :][None, :], sequence_length - sentence.shape[0], 0))) for sentence in x])
 
+    print x_pos[0].shape
+
+    # Pad sentences
+    x_pos = np.array([np.pad(sentence, ((0, sequence_length - sentence.shape[0]), (0, 0)), "mean") for sentence in x_pos if sentence != []], 0)
+
+    x_neg = np.array([np.pad(sentence, ((0, sequence_length - sentence.shape[0]), (0, 0)), "mean") for sentence in x_neg if sentence != []], 0)
+
+    x = np.concatenate(x_pos, x_neg)
+
+    print x.shape
 
     # for a in x:
     #   print a.shape
-    y = np.concatenate(([[0, 1] for _ in x_pos], [[1, 0] for _ in x_neg]))
+    y = np.concatenate(([[0, 1] for _ in xrange(x_pos.shape[0])], [[1, 0] for _ in xrange(x_neg.shape[0])]))
     return (x, y)
 
 x_train, y_train = build_data(train_pos, train_neg)
