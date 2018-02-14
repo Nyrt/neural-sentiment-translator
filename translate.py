@@ -9,9 +9,7 @@ from tqdm import tqdm
 import time
 import os
 import itertools
-
-
-
+import gensim
 
 tf.flags.DEFINE_string('load', None,
                        'Restore a model from the given path.')
@@ -73,11 +71,18 @@ def load_dir(path):
 print "loading vocabulary\r"
 vocab = open(vocab_path).read().splitlines()
 
+
 # Add various important numbers and tokens
 vocab+= ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "<NUM>", "<UNK>", "<PAD>"]
 vocab_inv = {} # Converts words to indexes
 for i in xrange(len(vocab)):
     vocab_inv[vocab[i]] = i
+
+
+print "loading word vector model"
+
+wordvec_model = gensim.models.KeyedVectors.load_word2vec_format('./model/GoogleNews-vectors-negative300.bin', binary=True)  
+
 
 print len(vocab)
 
@@ -116,9 +121,12 @@ def index(word):
     return vocab_inv["<UNK>"]
 
 def build_data(x_pos, x_neg):
-    x= np.array([np.array([index(word) for word in sentence] 
-                            + [vocab_inv["<PAD>"]]*(sequence_length - len(sentence)))
-                            for sentence in (x_pos + x_neg)])
+    x= [np.array([wordvec_model.wv[word] for word in sentence if word in wordvec_model.wv])
+                            for sentence in (x_pos + x_neg)]
+
+
+    # Pad sentence by repeating the last word vector
+    x = np.array([np.hstack(sentence, np.repeat([sentence[-1]], sequence_length - len(sentence))) for sentence in x])
 
 
     # for a in x:
@@ -143,7 +151,7 @@ x_test, y_test = build_data(test_pos, test_neg)
 batch_size = 128
 valid_freq = 1
 checkpoint_freq = 1
-embedding_size = 128
+embedding_size = 300
 num_filters = 128
 epochs = 50
 
@@ -187,7 +195,7 @@ def bias_variable(shape, name):
 
 with tf.device(device):
     # Placeholders
-    data_in = tf.placeholder(tf.int32, [None, sequence_length], name='data_in')
+    data_in = tf.placeholder(tf.int32, [None, sequence_length, embedding_size], name='data_in')
     data_out = tf.placeholder(tf.float32, [None, num_classes], name='data_out')
     dropout_keep_prob = tf.placeholder(tf.float32, name='dropout_keep_prob')
     # Stores the accuracy of the model for each batch of the validation testing
@@ -197,13 +205,13 @@ with tf.device(device):
 
 
 
-     # Embedding layer
-    with tf.name_scope('embedding'):
-        W = tf.Variable(tf.random_uniform([vocab_size, embedding_size],
-                                          -1.0, 1.0),
-                        name='embedding_matrix')
-        embedded_chars = tf.nn.embedding_lookup(W, data_in)
-        embedded_chars_expanded = tf.expand_dims(embedded_chars, -1)
+    #  # Embedding layer
+    # with tf.name_scope('embedding'):
+    #     W = tf.Variable(tf.random_uniform([vocab_size, embedding_size],
+    #                                       -1.0, 1.0),
+    #                     name='embedding_matrix')
+    #     embedded_chars = tf.nn.embedding_lookup(W, data_in)
+    #     embedded_chars_expanded = tf.expand_dims(embedded_chars, -1)
 
     # Convolution + ReLU + Pooling layer
     pooled_outputs = []
@@ -216,7 +224,7 @@ with tf.device(device):
                             num_filters]
             W = weight_variable(filter_shape, name='W_conv')
             b = bias_variable([num_filters], name='b_conv')
-            conv = tf.nn.conv2d(embedded_chars_expanded,
+            conv = tf.nn.conv2d(data_in,
                                 W,
                                 strides=[1, 1, 1, 1],
                                 padding='VALID',
