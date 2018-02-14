@@ -102,10 +102,10 @@ print "loaded %i negative test examples\r"%len(test_neg)
 
 sequence_length = max(len(x) for x in train_pos + train_neg + test_pos + test_neg)
 
-print train_pos[np.argmax([len(sentence) for sentence in train_pos])]
-print train_neg[np.argmax([len(sentence) for sentence in train_neg])]
-print test_pos[np.argmax([len(sentence) for sentence in test_pos])]
-print test_neg[np.argmax([len(sentence) for sentence in test_neg])]
+# print train_pos[np.argmax([len(sentence) for sentence in train_pos])]
+# print train_neg[np.argmax([len(sentence) for sentence in train_neg])]
+# print test_pos[np.argmax([len(sentence) for sentence in test_pos])]
+# print test_neg[np.argmax([len(sentence) for sentence in test_neg])]
 
 
 
@@ -124,9 +124,11 @@ def build_data(x_pos, x_neg):
     x= [np.array([wordvec_model.wv[word] for word in sentence if word in wordvec_model.wv])
                             for sentence in (x_pos + x_neg)]
 
+    # print x[0].shape
+    # print np.repeat(x[0][-1, :][None, :], sequence_length - x[0].shape[0], 0).shape
 
     # Pad sentence by repeating the last word vector
-    x = np.array([np.hstack(sentence, np.repeat([sentence[-1]], sequence_length - len(sentence))) for sentence in x])
+    x = np.array([np.vstack((sentence, np.repeat(sentence[-1, :][None, :], sequence_length - sentence.shape[0], 0))) for sentence in x])
 
 
     # for a in x:
