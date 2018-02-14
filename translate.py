@@ -16,6 +16,10 @@ tf.flags.DEFINE_string('load', None,
                        'Restore a model from the given path.')
 tf.flags.DEFINE_string('custom_input', '',
                        'Evaluate the model on the given string.')
+tf.flags.DEFINE_bool('skip_train', '',
+                       'Skip training.')
+tf.flags.DEFINE_bool('gpu', '',
+                       'Use GPU.')
 FLAGS = tf.flags.FLAGS
 #FLAGS(sys.argv)
 
@@ -115,7 +119,7 @@ x_train, y_train = build_data(train_pos, train_neg)
 # print x_train.shape
 # print x_train[0]
 
-x_test, y_test = build_data(test_pos, train_pos)
+x_test, y_test = build_data(test_pos, test_neg)
 
 #data_chkpt = open("data.npz", "w")
 
@@ -126,16 +130,22 @@ valid_freq = 1
 checkpoint_freq = 1
 embedding_size = 128
 num_filters = 128
-epochs = 3
+epochs = 50
+
 
 sequence_length = x_train.shape[1]
 num_classes = y_train.shape[1]
+
 vocab_size = len(vocab)
 filter_sizes = map(int, '3,4,5'.split(','))
 validate_every = len(y_train) / (batch_size * valid_freq)
 checkpoint_every = len(y_train) / (batch_size * checkpoint_freq)
 
 device = '/cpu:0'
+if FLAGS.gpu:
+	device = '/gpu:0'
+
+
 sess = tf.InteractiveSession()
 
 
@@ -229,7 +239,7 @@ with tf.device(device):
     cross_entropy = -tf.reduce_sum(data_out * tf.log(network_out))
 
     # Training algorithm
-    train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
+    train_step = tf.train.AdamOptimizer(1e-5).minimize(cross_entropy)
 
     # Testing operations
     correct_prediction = tf.equal(tf.argmax(network_out, 1),
@@ -286,121 +296,131 @@ def batch_iter(data, batch_size, num_epochs):
             #print shuffled_data[start_index:end_index].shape
             yield shuffled_data[start_index:end_index]
 
-print "Generating batches"
-batches = batch_iter(zip(x_train, y_train), batch_size, epochs)
-test_batches = list(batch_iter(zip(x_test, y_test), batch_size, 1))
-my_batch = batches.next()  # To use with human_readable_output()
+if not FLAGS.skip_train:
 
-# Pretty-printing variables
-global_step = 0
-batches_in_epoch = len(y_train) / batch_size
-batches_in_epoch = batches_in_epoch if batches_in_epoch != 0 else 1
-total_num_step = epochs * batches_in_epoch
+	print "Generating batches"
+	batches = batch_iter(zip(x_train, y_train), batch_size, epochs)
+	test_batches = list(batch_iter(zip(x_test, y_test), batch_size, 1))
+	my_batch = batches.next()  # To use with human_readable_output()
 
-batches_progressbar = tqdm(batches, total=total_num_step,
-                           desc='Starting training...')
+	# Pretty-printing variables
+	global_step = 0
+	batches_in_epoch = len(y_train) / batch_size
+	batches_in_epoch = batches_in_epoch if batches_in_epoch != 0 else 1
+	total_num_step = epochs * batches_in_epoch
 
-for batch in batches_progressbar:
-    global_step += 1
-    x_batch, y_batch = zip(*batch)
+	batches_progressbar = tqdm(batches, total=total_num_step,
+	                           desc='Starting training...')
 
-    # Run the training step
-    feed_dict = {data_in: x_batch,
-                 data_out: y_batch,
-                 dropout_keep_prob: 0.5}
-    train_result, loss_summary_result = sess.run([train_step, loss_summary],
-                                                 feed_dict=feed_dict)
+	for batch in batches_progressbar:
+	    global_step += 1
+	    x_batch, y_batch = zip(*batch)
 
-    # Print training accuracy
-    feed_dict = {data_in: x_batch,
-                 data_out: y_batch,
-                 dropout_keep_prob: 1.0}
-    accuracy_result = accuracy.eval(feed_dict=feed_dict)
-    current_loss = cross_entropy.eval(feed_dict=feed_dict)
-    current_epoch = (global_step / batches_in_epoch)
+	    # Run the training step
+	    feed_dict = {data_in: x_batch,
+	                 data_out: y_batch,
+	                 dropout_keep_prob: 0.8}
+	    train_result, loss_summary_result = sess.run([train_step, loss_summary],
+	                                                 feed_dict=feed_dict)
 
-    desc = 'Epoch: {} - loss: {:9.5f} - acc: {:7.5f}'.format(current_epoch,
-                                                             current_loss,
-                                                             accuracy_result)
-    batches_progressbar.set_description(desc)
+	    # Print training accuracy
+	    feed_dict = {data_in: x_batch,
+	                 data_out: y_batch,
+	                 dropout_keep_prob: 1.0}
+	    accuracy_result = accuracy.eval(feed_dict=feed_dict)
+	    current_loss = cross_entropy.eval(feed_dict=feed_dict)
+	    current_epoch = (global_step / batches_in_epoch)
 
-    # Write loss summary
-    summary_writer.add_summary(loss_summary_result, global_step)
+	    desc = 'Epoch: {} - loss: {:9.5f} - acc: {:7.5f}'.format(current_epoch,
+	                                                             current_loss,
+	                                                             accuracy_result)
+	    batches_progressbar.set_description(desc)
 
-    # Validation testing
-    # Evaluate accuracy as (correctly classified samples) / (all samples)
-    # For each batch, evaluate the loss
-    if global_step % validate_every == 0:
-        accuracies = []
-        losses = []
-        for test_batch in test_batches:
-            x_test_batch, y_test_batch = zip(*test_batch)
-            feed_dict = {data_in: x_test_batch,
-                         data_out: y_test_batch,
-                         dropout_keep_prob: 1.0}
-            accuracy_result = accuracy.eval(feed_dict=feed_dict)
-            current_loss = cross_entropy.eval(feed_dict=feed_dict)
-            accuracies.append(accuracy_result)
-            losses.append(current_loss)
+	    # Write loss summary
+	    summary_writer.add_summary(loss_summary_result, global_step)
 
-        # Evaluate the mean accuracy of the model using the test accuracies
-        mean_accuracy_result, accuracy_summary_result = sess.run(
-            [valid_mean_accuracy, valid_accuracy_summary],
-            feed_dict={valid_accuracies: accuracies})
-        # Evaluate the mean loss of the model using the test losses
-        mean_loss_result, loss_summary_result = sess.run(
-            [valid_mean_loss, valid_loss_summary],
-            feed_dict={valid_losses: losses})
+	    # Validation testing
+	    # Evaluate accuracy as (correctly classified samples) / (all samples)
+	    # For each batch, evaluate the loss
+	    if global_step % validate_every == 0:
+	        accuracies = []
+	        losses = []
+	        for test_batch in test_batches:
+	            x_test_batch, y_test_batch = zip(*test_batch)
+	            feed_dict = {data_in: x_test_batch,
+	                         data_out: y_test_batch,
+	                         dropout_keep_prob: 1.0}
+	            accuracy_result = accuracy.eval(feed_dict=feed_dict)
+	            current_loss = cross_entropy.eval(feed_dict=feed_dict)
+	            accuracies.append(accuracy_result)
+	            losses.append(current_loss)
 
-        valid_msg = 'Step %d of %d (epoch %d), validation accuracy: %g, ' \
-                    'validation loss: %g' % \
-                    (global_step, total_num_step, current_epoch,
-                     mean_accuracy_result, mean_loss_result)
-        batches_progressbar.write(valid_msg)
-        #log(valid_msg, verbose=False)  # Write only to file
+	        # Evaluate the mean accuracy of the model using the test accuracies
+	        mean_accuracy_result, accuracy_summary_result = sess.run(
+	            [valid_mean_accuracy, valid_accuracy_summary],
+	            feed_dict={valid_accuracies: accuracies})
+	        # Evaluate the mean loss of the model using the test losses
+	        mean_loss_result, loss_summary_result = sess.run(
+	            [valid_mean_loss, valid_loss_summary],
+	            feed_dict={valid_losses: losses})
 
-        # Write summaries
-        summary_writer.add_summary(accuracy_summary_result, global_step)
-        summary_writer.add_summary(loss_summary_result, global_step)
+	        valid_msg = 'Step %d of %d (epoch %d), validation accuracy: %g, ' \
+	                    'validation loss: %g' % \
+	                    (global_step, total_num_step, current_epoch,
+	                     mean_accuracy_result, mean_loss_result)
+	        batches_progressbar.write(valid_msg)
+	        #log(valid_msg, verbose=False)  # Write only to file
 
-    if checkpoint_every != 0 and global_step % checkpoint_every == 0:
-        batches_progressbar.write('Saving checkpoint...')
-        #log('Saving checkpoint...', verbose=False)
-        saver = tf.train.Saver()
-        saver.save(sess, CHECKPOINT_FILE_PATH)
+	        # Write summaries
+	        summary_writer.add_summary(accuracy_summary_result, global_step)
+	        summary_writer.add_summary(loss_summary_result, global_step)
 
-# Final validation testing
-accuracies = []
-losses = []
-for test_batch in test_batches:
-    x_test_batch, y_test_batch = zip(*test_batch)
-    feed_dict = {data_in: x_test_batch,
-                 data_out: y_test_batch,
-                 dropout_keep_prob: 1.0}
-    accuracy_result = accuracy.eval(feed_dict=feed_dict)
-    current_loss = cross_entropy.eval(feed_dict=feed_dict)
-    accuracies.append(accuracy_result)
-    losses.append(current_loss)
+	    if checkpoint_every != 0 and global_step % checkpoint_every == 0:
+	        batches_progressbar.write('Saving checkpoint...')
+	        #log('Saving checkpoint...', verbose=False)
+	        saver = tf.train.Saver()
+	        saver.save(sess, CHECKPOINT_FILE_PATH)
 
-mean_accuracy_result, accuracy_summary_result = sess.run(
-    [valid_mean_accuracy, valid_accuracy_summary],
-    feed_dict={valid_accuracies: accuracies})
-mean_loss_result, loss_summary_result = sess.run(
-    [valid_mean_loss, valid_loss_summary], feed_dict={valid_losses: losses})
-#log('End of training, validation accuracy: %g, validation loss: %g' %
-#    (mean_accuracy_result, mean_loss_result))
+	# Final validation testing
+	accuracies = []
+	losses = []
+	for test_batch in test_batches:
+	    x_test_batch, y_test_batch = zip(*test_batch)
+	    feed_dict = {data_in: x_test_batch,
+	                 data_out: y_test_batch,
+	                 dropout_keep_prob: 1.0}
+	    accuracy_result = accuracy.eval(feed_dict=feed_dict)
+	    current_loss = cross_entropy.eval(feed_dict=feed_dict)
+	    accuracies.append(accuracy_result)
+	    losses.append(current_loss)
 
-# Write summaries
-summary_writer.add_summary(accuracy_summary_result, global_step)
-summary_writer.add_summary(loss_summary_result, global_step)
+	mean_accuracy_result, accuracy_summary_result = sess.run(
+	    [valid_mean_accuracy, valid_accuracy_summary],
+	    feed_dict={valid_accuracies: accuracies})
+	mean_loss_result, loss_summary_result = sess.run(
+	    [valid_mean_loss, valid_loss_summary], feed_dict={valid_losses: losses})
+	#log('End of training, validation accuracy: %g, validation loss: %g' %
+	#    (mean_accuracy_result, mean_loss_result))
 
-def evaluate_sentence(sentence, vocabulary):
+	# Write summaries
+	summary_writer.add_summary(accuracy_summary_result, global_step)
+	summary_writer.add_summary(loss_summary_result, global_step)
+
+def evaluate_sentence(sentence):
     """
     Translates a string to its equivalent in the integer vocabulary and feeds it
     to the network.
     Outputs result to stdout.
     """
-    x_to_eval = string_to_int(sentence, vocabulary, max(len(_) for _ in x))
+
+    sentence = sentence.strip().lower().translate(None, string.punctuation).split(" ")
+    if len(sentence) > sequence_length:
+	   	print "sentence too long"
+	   	return
+    x_to_eval = np.array([index(word) for word in sentence] + [vocab_inv["<PAD>"]]*(sequence_length - len(sentence)))[None,:]
+
+
+    # x_to_eval = string_to_int(sentence, vocabulary, max(len(_) for _ in x))
     result = sess.run(tf.argmax(network_out, 1),
                       feed_dict={data_in: x_to_eval,
                                  dropout_keep_prob: 1.0})
@@ -437,4 +457,4 @@ def get_word_grads(sentence, vocabulary, target):
     #log('Actual output:', str(unnorm_result[0]))
 
 if FLAGS.custom_input != '':
-    evaluate_sentence(FLAGS.custom_input, vocabulary)
+    evaluate_sentence(FLAGS.custom_input)
