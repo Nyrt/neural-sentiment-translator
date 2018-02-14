@@ -58,7 +58,7 @@ def load_dir(path):
         if file.endswith(".txt"):
             #print os.path.join(path, file)
             doc = open(os.path.join(path, file)).read().strip().lower()#.translate(None, string.punctuation).split(".!?")
-            sentences = re.split("[.?!\r]", doc)
+            sentences = re.split("[.?!\r]|<br */>", doc)
             for sentence in sentences:
                 words = sentence.translate(None, string.punctuation).split(" ")
                     
@@ -96,6 +96,13 @@ test_neg = load_dir(test_neg_dir)
 print "loaded %i negative test examples\r"%len(test_neg)
 
 sequence_length = max(len(x) for x in train_pos + train_neg + test_pos + test_neg)
+
+print train_pos[np.argmax([len(sentence) for sentence in train_pos])]
+print train_neg[np.argmax([len(sentence) for sentence in train_neg])]
+print test_pos[np.argmax([len(sentence) for sentence in test_pos])]
+print test_neg[np.argmax([len(sentence) for sentence in test_neg])]
+
+
 
 print "Max length: %u"%sequence_length
 
