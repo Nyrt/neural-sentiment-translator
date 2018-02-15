@@ -120,6 +120,17 @@ def index(word):
         return vocab_inv["<NUM>"] #Just a random idea I had that numbers are important to distinguish from words
     return vocab_inv["<UNK>"]
 
+def pad(x):
+    for i in xrange(len(x)):
+        sentence = x[i]
+        print x[i].shape
+        if sentence.ndim == 0:
+            sentence = np.ndarray((embedding_size,0))
+        elif sentence.ndim == 1:
+            sentence = sentence[:,None]
+        x[i] = np.pad(sentence, [(0, sequence_length - sentence.shape[0]), (0, 0)], "mean")
+    return np.array([x_pos])
+
 def build_data(x_pos, x_neg):
     x_pos = [np.array([wordvec_model.wv[word] for word in sentence if word in wordvec_model.wv])
                             for sentence in (x_pos)]
@@ -127,13 +138,19 @@ def build_data(x_pos, x_neg):
     x_neg = [np.array([wordvec_model.wv[word] for word in sentence if word in wordvec_model.wv])
                             for sentence in (x_neg)]
 
-
     print x_pos[0].shape
 
-    # Pad sentences
-    x_pos = np.array([np.pad(sentence, ((0, sequence_length - sentence.shape[0]), (0, 0)), "mean") for sentence in x_pos if sentence != []], 0)
 
-    x_neg = np.array([np.pad(sentence, ((0, sequence_length - sentence.shape[0]), (0, 0)), "mean") for sentence in x_neg if sentence != []], 0)
+    x_pos = pad(x_pos)
+    print x_pos[0].shape
+    print x_pos.shape
+
+    # Pad sentences
+
+    
+
+    x_neg = pad(x_neg)
+
 
     x = np.concatenate(x_pos, x_neg)
 
