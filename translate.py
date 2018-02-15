@@ -19,7 +19,7 @@ tf.flags.DEFINE_bool('skip_train', '',
                        'Skip training.')
 tf.flags.DEFINE_bool('gpu', False,
                        'Use GPU.')
-tf.flags.DEFINE_integer('max_input_len', 100,
+tf.flags.DEFINE_integer('max_input_len', 30,
                        'The maximum length of an input sentence (in words).')
 FLAGS = tf.flags.FLAGS
 #FLAGS(sys.argv)
@@ -49,8 +49,9 @@ test_neg_dir = "data/aclImdb/test/neg/"
 vocab_path = "data/aclImdb/imdb.vocab"
 
 
+
 # returns a list of documents, each of which is a list of words
-def load_dir(path):
+def load_dir(path, num_samples):
     data = []
     for file in os.listdir(path):
         if file.endswith(".txt"):
@@ -63,9 +64,16 @@ def load_dir(path):
                 words = filter(None, words)
                 if len(words) > FLAGS.max_input_len:
                     args = [iter(words)] * FLAGS.max_input_len
-                    words = list(itertools.izip_longest(*args, fillvalue="<PAD>"))
+                    split_words = list(itertools.izip_longest(*args, fillvalue="<PAD>"))
+                    for w in split_words:
+                        data.append(w)
+                        if len(data) >= num_samples:
+                            return data
                 else:
-                    data.append(words)
+                    if len(words) > 0:
+                        data.append(words)
+                    if len(data) >= num_samples:
+                        return data
     return data
 
 print "loading vocabulary\r"
@@ -88,19 +96,23 @@ print len(vocab)
 
 print "loading data\r"
 
-train_pos = load_dir(train_pos_dir)
+train_pos = load_dir(train_pos_dir, 10000)
 print "loaded %i positive training examples\r"%len(train_pos)
 
-train_neg = load_dir(train_neg_dir)
+train_neg = load_dir(train_neg_dir, 10000)
 print "loaded %i negative training examples\r"%len(train_neg)
 
-test_pos = load_dir(test_pos_dir)
+test_pos = load_dir(test_pos_dir, 1000)
 print "loaded %i positive test examples\r"%len(test_pos)
 
-test_neg = load_dir(test_neg_dir)
+test_neg = load_dir(test_neg_dir, 1000)
 print "loaded %i negative test examples\r"%len(test_neg)
 
 sequence_length = max(len(x) for x in train_pos + train_neg + test_pos + test_neg)
+
+print "Seq len", sequence_length
+
+print [w for w in train_pos + train_neg + test_pos + test_neg if len(w) > 30]
 
 # print train_pos[np.argmax([len(sentence) for sentence in train_pos])]
 # print train_neg[np.argmax([len(sentence) for sentence in train_neg])]
@@ -111,7 +123,7 @@ sequence_length = max(len(x) for x in train_pos + train_neg + test_pos + test_ne
 
 print "Max length: %u"%sequence_length
 
-print "generating input data"
+print "building training data"
 
 def index(word):
     if word in vocab_inv:
@@ -119,46 +131,54 @@ def index(word):
     if word[0].isdigit():
         return vocab_inv["<NUM>"] #Just a random idea I had that numbers are important to distinguish from words
     return vocab_inv["<UNK>"]
-
-def pad(x):
-    for i in xrange(len(x)):
-        sentence = x[i]
-        print x[i].shape
-        if sentence.ndim == 0:
-            sentence = np.ndarray((embedding_size,0))
-        elif sentence.ndim == 1:
-            sentence = sentence[:,None]
-        x[i] = np.pad(sentence, [(0, sequence_length - sentence.shape[0]), (0, 0)], "mean")
-    return np.array([x_pos])
+    
 
 def build_data(x_pos, x_neg):
+    # print [[word for word in sentence if word not in wordvec_model.wv] for sentence in x_pos]
+
+    print "    converting to vectors"
+
     x_pos = [np.array([wordvec_model.wv[word] for word in sentence if word in wordvec_model.wv])
                             for sentence in (x_pos)]
 
     x_neg = [np.array([wordvec_model.wv[word] for word in sentence if word in wordvec_model.wv])
                             for sentence in (x_neg)]
 
-    print x_pos[0].shape
+    # print len(x_pos)
+    # print [i for i in xrange(len(x_pos)) if x_pos[i].shape[0] == 0]
+    x_pos = [s for s in x_pos if s.shape[0] != 0] # Let's just remove examples with no recognized words
+    # print len(x_pos)
+
+    x_neg = [s for s in x_neg if s.shape[0] != 0] # Let's just remove examples with no recognized words
+
+    num_pos = len(x_pos)
+    num_neg = len(x_neg)
+    x = x_pos + x_neg
+
+    # Running out of memory!
+    del x_pos
+    del x_neg
+
+    # print x[0].shape
+
+    print "    padding"
 
 
-    x_pos = pad(x_pos)
-    print x_pos[0].shape
-    print x_pos.shape
-
-    # Pad sentences
-
-    
-
-    x_neg = pad(x_neg)
+    for i in xrange(len(x)):
+        # print x[i].shape
+        if x[i].ndim == 1:
+            x[i] = x[i][:,None]
+        x[i] = np.pad(x[i], [(0, sequence_length - x[i].shape[0]), (0, 0)], "mean")
+    x = np.array(x)
 
 
-    x = np.concatenate(x_pos, x_neg)
+    # print x[0].shape
+    # print x.shape
 
-    print x.shape
+    print "    generating labels"
 
-    # for a in x:
-    #   print a.shape
-    y = np.concatenate(([[0, 1] for _ in xrange(x_pos.shape[0])], [[1, 0] for _ in xrange(x_neg.shape[0])]))
+
+    y = np.concatenate(([[0, 1] for _ in xrange(num_pos)], [[1, 0] for _ in xrange(num_neg)]))
     return (x, y)
 
 x_train, y_train = build_data(train_pos, train_neg)
@@ -168,6 +188,7 @@ x_train, y_train = build_data(train_pos, train_neg)
 
 # print x_train.shape
 # print x_train[0]
+print "building test data"
 
 x_test, y_test = build_data(test_pos, test_neg)
 
@@ -195,6 +216,7 @@ device = '/cpu:0'
 if FLAGS.gpu:
     device = '/gpu:0'
 
+print "building model"
 
 sess = tf.InteractiveSession()
 
