@@ -536,9 +536,22 @@ def get_word_grads(sentence, target):
     # x_to_eval = string_to_int(sentence, vocabulary, max(len(_) for _ in x))
 
     gradients = sess.run(grad, feed_dict={data_in: x_to_eval, data_out: y_target, dropout_keep_prob: 1.0})
+    gradients = gradients[0]
+    gradients = gradients[0, :, :]
     print gradients
+    print np.linalg.norm(gradients, 2, -1)
     #log('Custom input evaluation:', network_sentiment)
     #log('Actual output:', str(unnorm_result[0]))
+    x_to_eval = x_to_eval[0, :, :]
+
+    print x_to_eval.shape
+    print gradients.shape
+
+    new_words = x_to_eval + gradients
+    for i in xrange(len(sentence)):
+        print sentence[i]
+        print wordvec_model.most_similar([new_words[i,:]])
+
 
 
 if FLAGS.custom_input != '':
