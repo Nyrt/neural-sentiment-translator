@@ -509,6 +509,10 @@ def evaluate_sentence(sentence):
     #log('Custom input evaluation:', network_sentiment)
     #log('Actual output:', str(unnorm_result[0]))
 
+
+
+word_lr = 0.1
+
 def get_word_grads(sentence, target):
     """
     Translates a string to its equivalent in the integer vocabulary and feeds it
@@ -520,6 +524,7 @@ def get_word_grads(sentence, target):
         print "sentence too long"
         return
 
+    loss = 100
 
 
     x_to_eval = np.array([wordvec_model.wv[word] for word in sentence if word in wordvec_model.wv])
@@ -529,28 +534,36 @@ def get_word_grads(sentence, target):
 
     if target > 0:
         y_target = np.array([[0, 1]]) 
-    elif target < 0:
+    elif target <= 0:
         y_target = np.array([[1, 0]]) 
 
+    while loss > -1:
+        # x_to_eval = string_to_int(sentence, vocabulary, max(len(_) for _ in x))
 
-    # x_to_eval = string_to_int(sentence, vocabulary, max(len(_) for _ in x))
+        result = sess.run(network_out, feed_dict={data_in: x_to_eval, dropout_keep_prob: 1.0})
 
-    gradients = sess.run(grad, feed_dict={data_in: x_to_eval, data_out: y_target, dropout_keep_prob: 1.0})
-    gradients = gradients[0]
-    gradients = gradients[0, :, :]
-    print gradients
-    print np.linalg.norm(gradients, 2, -1)
-    #log('Custom input evaluation:', network_sentiment)
-    #log('Actual output:', str(unnorm_result[0]))
-    x_to_eval = x_to_eval[0, :, :]
+        loss = abs(result[0][1] - target)
+        print loss
 
-    print x_to_eval.shape
-    print gradients.shape
 
-    new_words = x_to_eval + gradients
-    for i in xrange(len(sentence)):
-        print sentence[i]
-        print wordvec_model.most_similar([new_words[i,:]])
+
+        gradients = sess.run(grad, feed_dict={data_in: x_to_eval, data_out: y_target, dropout_keep_prob: 1.0})
+        gradients = gradients[0]
+        gradients = gradients[0, :, :]
+        # print gradients
+        # print np.linalg.norm(gradients, 2, -1)
+        #log('Custom input evaluation:', network_sentiment)
+        #log('Actual output:', str(unnorm_result[0]))
+        x_to_eval = x_to_eval[0, :, :]
+
+        # print x_to_eval.shape
+        # print gradients.shape
+
+        new_words = x_to_eval - gradients * word_lr
+        for i in xrange(len(sentence)):
+            print sentence[i], wordvec_model.most_similar([new_words[i,:]], topn=1)
+
+        x_to_eval = new_words[None, :, :]
 
 
 
