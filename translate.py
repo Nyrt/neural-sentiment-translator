@@ -543,7 +543,7 @@ def get_word_grads(sentence, target):
     elif target <= 0:
         y_target = np.array([[1, 0]]) 
 
-    while loss > -1:
+    while loss > 0.1:
         # x_to_eval = string_to_int(sentence, vocabulary, max(len(_) for _ in x))
 
         result = sess.run(network_out, feed_dict={data_in: x_to_eval, dropout_keep_prob: 1.0})
@@ -556,14 +556,14 @@ def get_word_grads(sentence, target):
         gradients = sess.run(grad, feed_dict={data_in: x_to_eval, data_out: y_target, dropout_keep_prob: 1.0})
         gradients = gradients[0]
         gradients = gradients[0, :, :]
-        # print gradients
-        # print np.linalg.norm(gradients, 2, -1)
-        #log('Custom input evaluation:', network_sentiment)
-        #log('Actual output:', str(unnorm_result[0]))
+
         x_to_eval = x_to_eval[0, :, :]
 
         # print x_to_eval.shape
         # print gradients.shape
+
+        ######### MASK OUT FILLER
+        ######### Select top words?
 
         new_words = x_to_eval - gradients * word_lr
         for i in xrange(len(sentence)):
