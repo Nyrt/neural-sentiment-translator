@@ -10,6 +10,7 @@ import time
 import os
 import itertools
 import gensim
+import tempfile
 
 tf.flags.DEFINE_string('load', None,
                        'Restore a model from the given path.')
@@ -113,20 +114,25 @@ def build_data(x_pos, x_neg):
     y = np.concatenate(([[0, 1] for _ in xrange(num_pos)], [[1, 0] for _ in xrange(num_neg)]))
     return (x, y)
 
-# print "loading vocabulary\r"
-# vocab = open(vocab_path).read().splitlines()
+# Construct vocabulary to avoid loading unnecessisary word vectors
+with tempfile.TemporaryFile() as tmp:
+    # print "loading vocabulary\r"
+    # lines = open(vocab_path).readlines()
+
+    # for line in lines:
+    #     tmp.write(line + " 1\r")
 
 
-# # Add various important numbers and tokens
-# vocab+= ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "<NUM>", "<UNK>", "<PAD>"]
-# vocab_inv = {} # Converts words to indexes
-# for i in xrange(len(vocab)):
-#     vocab_inv[vocab[i]] = i
+    # # Add various important numbers and tokens
+    # vocab+= ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "<NUM>", "<UNK>", "<PAD>"]
+    # vocab_inv = {} # Converts words to indexes
+    # for i in xrange(len(vocab)):
+    #     vocab_inv[vocab[i]] = i
 
 
-print "loading word vector model"
+    print "loading word vector model"
 
-wordvec_model = gensim.models.KeyedVectors.load_word2vec_format('./model/GoogleNews-vectors-negative300.bin', binary=True)  
+    wordvec_model = gensim.models.KeyedVectors.load_word2vec_format('./model/GoogleNews-vectors-negative300.bin', binary=True, limit=50000)  
 
 
 if not FLAGS.skip_train:
@@ -511,7 +517,7 @@ def evaluate_sentence(sentence):
 
 
 
-word_lr = 0.1
+word_lr = 1
 
 def get_word_grads(sentence, target):
     """
@@ -561,7 +567,7 @@ def get_word_grads(sentence, target):
 
         new_words = x_to_eval - gradients * word_lr
         for i in xrange(len(sentence)):
-            print sentence[i], wordvec_model.most_similar([new_words[i,:]], topn=1)
+            print sentence[i], wordvec_model.most_similar([new_words[i,:]], topn=10)
 
         x_to_eval = new_words[None, :, :]
 
