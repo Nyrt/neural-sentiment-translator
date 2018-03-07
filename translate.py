@@ -132,7 +132,7 @@ with tempfile.TemporaryFile() as tmp:
 
     print "loading word vector model"
 
-    wordvec_model = gensim.models.KeyedVectors.load_word2vec_format('./model/GoogleNews-vectors-negative300.bin', binary=True, limit=50000)  
+    wordvec_model = gensim.models.KeyedVectors.load_word2vec_format('./model/GoogleNews-vectors-negative300.bin', binary=True, limit=100000)  
 
 
 if not FLAGS.skip_train:
@@ -197,7 +197,7 @@ batch_size = 128
 valid_freq = 1
 checkpoint_freq = 1
 embedding_size = 300
-num_filters = 128
+num_filters = 32
 epochs = 50
 learning_rate = 1e-4
 reg = 1e-4
@@ -282,6 +282,7 @@ with tf.device(device):
                                 name='conv')
             # Activation function
             h = tf.nn.relu(tf.nn.bias_add(conv, b), name='relu')
+
             # Maxpooling layer
             ksize = [1,
                      sequence_length - filter_size + 1,
@@ -536,6 +537,9 @@ def get_word_grads(sentence, target):
     x_to_eval = np.array([wordvec_model.wv[word] for word in sentence if word in wordvec_model.wv])
     x_to_eval = np.array([np.pad(x_to_eval, [(0, sequence_length - x_to_eval.shape[0]), (0, 0)], "constant")])
 
+    indexes = [i for i in xrange(len(sentence)) if sentence[i] in wordvec_model.wv]
+    print indexes
+
     y_target = np.array([[0.5, 0.5]]) 
 
     if target > 0:
@@ -548,8 +552,12 @@ def get_word_grads(sentence, target):
 
         result = sess.run(network_out, feed_dict={data_in: x_to_eval, dropout_keep_prob: 1.0})
 
-        loss = abs(result[0][1] - target)
+        new_loss = abs(result[0][1] - target)
         print loss
+        if loss == new_loss:
+            print "unable to translate" 
+            break
+        loss = new_loss
 
 
 
@@ -557,17 +565,28 @@ def get_word_grads(sentence, target):
         gradients = gradients[0]
         gradients = gradients[0, :, :]
 
+
+        gradients = gradients * np.linalg.norm(gradients, -1)
+
         x_to_eval = x_to_eval[0, :, :]
+
+        # Mask out filler
+        gradients = gradients * (np.linalg.norm(x_to_eval, 2, -1) == 0)[:, None]
+
+        print np.linalg.norm(gradients, -1)
 
         # print x_to_eval.shape
         # print gradients.shape
 
-        ######### MASK OUT FILLER
         ######### Select top words?
 
         new_words = x_to_eval - gradients * word_lr
+        i_x = 0
         for i in xrange(len(sentence)):
-            print sentence[i], wordvec_model.most_similar([new_words[i,:]], topn=10)
+            print sentence[i]
+            if i in indexes:
+                print wordvec_model.most_similar([new_words[i_x,:]], topn=10)
+                i_x += 1
 
         x_to_eval = new_words[None, :, :]
 
