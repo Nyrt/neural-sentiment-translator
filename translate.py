@@ -115,24 +115,25 @@ def build_data(x_pos, x_neg):
     return (x, y)
 
 # Construct vocabulary to avoid loading unnecessisary word vectors
-with tempfile.TemporaryFile() as tmp:
-    # print "loading vocabulary\r"
-    # lines = open(vocab_path).readlines()
 
-    # for line in lines:
-    #     tmp.write(line + " 1\r")
+print "loading vocabulary\r"
+vocab = open(vocab_path).read()
+vocab = vocab.split("\n")
 
-
-    # # Add various important numbers and tokens
-    # vocab+= ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "<NUM>", "<UNK>", "<PAD>"]
-    # vocab_inv = {} # Converts words to indexes
-    # for i in xrange(len(vocab)):
-    #     vocab_inv[vocab[i]] = i
+# for line in lines:
+#     tmp.write(line + " 1\r")
 
 
-    print "loading word vector model"
+# # Add various important numbers and tokens
+# vocab+= ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "<NUM>", "<UNK>", "<PAD>"]
+# vocab_inv = {} # Converts words to indexes
+# for i in xrange(len(vocab)):
+#     vocab_inv[vocab[i]] = i
 
-    wordvec_model = gensim.models.KeyedVectors.load_word2vec_format('./model/GoogleNews-vectors-negative300.bin', binary=True, limit=100000)  
+
+print "loading word vector model"
+
+wordvec_model = gensim.models.KeyedVectors.load_word2vec_format('./model/GoogleNews-vectors-negative300.bin', binary=True, limit=100000)  
 
 
 if not FLAGS.skip_train:
@@ -518,7 +519,13 @@ def evaluate_sentence(sentence):
 
 
 
-word_lr = 1
+def distance(source_word, grad, target_word):
+    t_0 = grad.dot(target_word-source_word) / grad.dot(grad) # Closest point on the line
+    return np.linalg.norm(target_word - (source_word + t_0*grad))
+
+
+
+word_lr = 100
 
 def get_word_grads(sentence, target):
     """
@@ -547,6 +554,10 @@ def get_word_grads(sentence, target):
     elif target <= 0:
         y_target = np.array([[1, 0]]) 
 
+
+    # Create subspace
+    # vocab_vecs = np.array([wordvec_model.wv[word] for word in vocab if word in wordvec_model.wv])
+
     while loss > 0.1:
         # x_to_eval = string_to_int(sentence, vocabulary, max(len(_) for _ in x))
 
@@ -571,9 +582,9 @@ def get_word_grads(sentence, target):
         x_to_eval = x_to_eval[0, :, :]
 
         # Mask out filler
-        gradients = gradients * (np.linalg.norm(x_to_eval, 2, -1) == 0)[:, None]
+        gradients = gradients * (np.linalg.norm(x_to_eval, 2, -1) != 0)[:, None]
 
-        print np.linalg.norm(gradients, -1)
+        # print np.linalg.norm(gradients, 2, -1)
 
         # print x_to_eval.shape
         # print gradients.shape
@@ -589,6 +600,8 @@ def get_word_grads(sentence, target):
                 i_x += 1
 
         x_to_eval = new_words[None, :, :]
+
+        # break
 
 
 
