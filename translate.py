@@ -120,6 +120,7 @@ print "loading vocabulary\r"
 vocab = open(vocab_path).read()
 vocab = vocab.split("\n")
 
+
 # for line in lines:
 #     tmp.write(line + " 1\r")
 
@@ -134,7 +135,6 @@ vocab = vocab.split("\n")
 print "loading word vector model"
 
 wordvec_model = gensim.models.KeyedVectors.load_word2vec_format('./model/GoogleNews-vectors-negative300.bin', binary=True, limit=100000)  
-
 
 if not FLAGS.skip_train:
 
@@ -520,12 +520,17 @@ def evaluate_sentence(sentence):
 
 
 def distance(source_word, grad, target_word):
-    t_0 = grad.dot(target_word-source_word) / grad.dot(grad) # Closest point on the line
-    return np.linalg.norm(target_word - (source_word + t_0*grad))
-
-
+    t_0 = (grad.dot(target_word-source_word) + 1e-9) / (grad.dot(grad) + 1e-9) # Closest point on the line
+    if t_0 > 0:
+        return np.linalg.norm(target_word - (source_word + t_0*grad))
+    else:
+        return 100#np.linalg.norm(source_word - target_word)
 
 word_lr = 100
+
+
+vocab = [word for word in vocab if word in wordvec_model.wv]
+vocab_vecs = np.array([wordvec_model.wv[word] for word in vocab])
 
 def get_word_grads(sentence, target):
     """
@@ -555,8 +560,6 @@ def get_word_grads(sentence, target):
         y_target = np.array([[1, 0]]) 
 
 
-    # Create subspace
-    # vocab_vecs = np.array([wordvec_model.wv[word] for word in vocab if word in wordvec_model.wv])
 
     while loss > 0.1:
         # x_to_eval = string_to_int(sentence, vocabulary, max(len(_) for _ in x))
@@ -596,12 +599,25 @@ def get_word_grads(sentence, target):
         for i in xrange(len(sentence)):
             print sentence[i]
             if i in indexes:
-                print wordvec_model.most_similar([new_words[i_x,:]], topn=10)
+                # print wordvec_model.most_similar([new_words[i_x,:]], topn=10)
+
+
+                min_dist = 100
+                min_word = 0
+                print np.linalg.norm(gradients[i_x, :])
+                for word in xrange(len(vocab)):
+                    if vocab[word] != sentence[i]:
+                        d = distance(x_to_eval[i_x,:], gradients[i_x, :], vocab_vecs[word,:])
+                        if d < min_dist:
+                            min_dist = d
+                            min_word = word
+                print vocab[min_word], min_dist
+
                 i_x += 1
 
         x_to_eval = new_words[None, :, :]
 
-        # break
+        break
 
 
 
