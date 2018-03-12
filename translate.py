@@ -521,8 +521,8 @@ def evaluate_sentence(sentence):
 
 def distance(source_word, grad, target_word):
     t_0 = (grad.dot(target_word-source_word) + 1e-9) / (grad.dot(grad) + 1e-9) # Closest point on the line
-    if t_0 > 0:
-        return np.linalg.norm(target_word - (source_word + t_0*grad))
+    if t_0 < 0:
+        return np.linalg.norm(target_word - (source_word + t_0*grad))# - t_0
     else:
         return 100#np.linalg.norm(source_word - target_word)
 
@@ -550,7 +550,6 @@ def get_word_grads(sentence, target):
     x_to_eval = np.array([np.pad(x_to_eval, [(0, sequence_length - x_to_eval.shape[0]), (0, 0)], "constant")])
 
     indexes = [i for i in xrange(len(sentence)) if sentence[i] in wordvec_model.wv]
-    print indexes
 
     y_target = np.array([[0.5, 0.5]]) 
 
@@ -567,11 +566,11 @@ def get_word_grads(sentence, target):
         result = sess.run(network_out, feed_dict={data_in: x_to_eval, dropout_keep_prob: 1.0})
 
         new_loss = abs(result[0][1] - target)
-        print loss
         if loss == new_loss:
             print "unable to translate" 
             break
         loss = new_loss
+        print loss
 
 
 
@@ -602,16 +601,14 @@ def get_word_grads(sentence, target):
                 # print wordvec_model.most_similar([new_words[i_x,:]], topn=10)
 
 
-                min_dist = 100
-                min_word = 0
+                distances = np.zeros(len(vocab))
                 print np.linalg.norm(gradients[i_x, :])
                 for word in xrange(len(vocab)):
                     if vocab[word] != sentence[i]:
-                        d = distance(x_to_eval[i_x,:], gradients[i_x, :], vocab_vecs[word,:])
-                        if d < min_dist:
-                            min_dist = d
-                            min_word = word
-                print vocab[min_word], min_dist
+                        distances[word] = distance(x_to_eval[i_x,:], gradients[i_x, :], vocab_vecs[word,:])
+                
+
+                print [vocab[w] for w in np.argsort(distances)[:10]], np.sort(distances)[:10]
 
                 i_x += 1
 
