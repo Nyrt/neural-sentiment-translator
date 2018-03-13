@@ -4,20 +4,22 @@ import string
 import re
 import numpy as np
 import sys
-from tensorflow.python.framework.graph_util import convert_variables_to_constants
 from tqdm import tqdm
 import time
 import os
 import itertools
 import gensim
-import tempfile
+
+
+#Architecture adapted from https://github.com/danielegrattarola/twitter-sentiment-cnn
+
 
 tf.flags.DEFINE_string('load', None,
                        'Restore a model from the given path.')
 tf.flags.DEFINE_string('custom_input', '',
                        'Evaluate the model on the given string.')
-tf.flags.DEFINE_float('get_grads', 0,
-                       'Evaluate the model on the given string.')
+tf.flags.DEFINE_float('target_sentiment', None,
+                       'Attempt to translate to a target sentiment.')
 tf.flags.DEFINE_bool('skip_train', '',
                        'Skip training.')
 tf.flags.DEFINE_bool('gpu', False,
@@ -41,7 +43,6 @@ else:
     os.mkdir(RUN_DIR)
 SUMMARY_DIR = os.path.join(RUN_DIR, 'summaries')
 
-#Architecture adapted from https://github.com/danielegrattarola/twitter-sentiment-cnn
 
 train_pos_dir = "data/aclImdb/train/pos/"
 train_neg_dir = "data/aclImdb/train/neg/"
@@ -51,9 +52,7 @@ test_neg_dir = "data/aclImdb/test/neg/"
 
 vocab_path = "data/aclImdb/imdb.vocab"
 
-
-
-# returns a list of documents, each of which is a list of words
+# returns a list of sentences, each of which is a list of words
 def load_dir(path, num_samples):
     data = []
     for file in os.listdir(path):
@@ -80,7 +79,7 @@ def load_dir(path, num_samples):
 
     return data
 
-
+# Converts the sentences into word vectors
 def build_data(x_pos, x_neg):
     # print [[word for word in sentence if word not in wordvec_model.wv] for sentence in x_pos]
 
@@ -114,8 +113,7 @@ def build_data(x_pos, x_neg):
     y = np.concatenate(([[0, 1] for _ in xrange(num_pos)], [[1, 0] for _ in xrange(num_neg)]))
     return (x, y)
 
-# Construct vocabulary to avoid loading unnecessisary word vectors
-
+# Construct vocabulary for word proposals later on
 print "loading vocabulary\r"
 vocab = open(vocab_path).read()
 vocab = vocab.split("\n")
@@ -194,22 +192,27 @@ if not FLAGS.skip_train:
 
 #np.savez(data_chkpt, x_train=x_train, y_train = y_train, x_test=x_test, y_test = y_test)
 
+
+## Various parameters of the network and training
+## TODO: Make these flags
+
 batch_size = 128
 valid_freq = 1
 checkpoint_freq = 1
 embedding_size = 300
 num_filters = 32
 epochs = 50
-learning_rate = 1e-4
+learning_rate = 3e-4
 reg = 1e-4
-training_dropout = 0.5
+training_dropout = 0.1
+filter_sizes = [1,2,3,4,5]
 
 
 sequence_length = FLAGS.max_input_len
 num_classes = 2
 
 # vocab_size = len(vocab)
-filter_sizes = map(int, '3,4,5'.split(','))
+
 if not FLAGS.skip_train:
     validate_every = len(y_train) / (batch_size * valid_freq)
     checkpoint_every = len(y_train) / (batch_size * checkpoint_freq)
@@ -487,6 +490,7 @@ if not FLAGS.skip_train:
     summary_writer.add_summary(accuracy_summary_result, global_step)
     summary_writer.add_summary(loss_summary_result, global_step)
 
+
 def evaluate_sentence(sentence):
     """
     Translates a string to its equivalent in the integer vocabulary and feeds it
@@ -498,8 +502,6 @@ def evaluate_sentence(sentence):
     if len(sentence) > sequence_length:
         print "sentence too long"
         return
-
-
 
     x_to_eval = np.array([wordvec_model.wv[word] for word in sentence if word in wordvec_model.wv])
 
@@ -532,12 +534,9 @@ word_lr = 100
 vocab = [word for word in vocab if word in wordvec_model.wv]
 vocab_vecs = np.array([wordvec_model.wv[word] for word in vocab])
 
-def get_word_grads(sentence, target):
-    """
-    Translates a string to its equivalent in the integer vocabulary and feeds it
-    to the network.
-    Outputs result to stdout.
-    """
+
+# Attempts to translate the sentence to the target sentiment
+def translate(sentence, target):
     sentence = sentence.strip().lower().translate(None, string.punctuation).split(" ")
     if len(sentence) > sequence_length:
         print "sentence too long"
@@ -619,8 +618,8 @@ def get_word_grads(sentence, target):
 
 
 if FLAGS.custom_input != '':
-    if FLAGS.get_grads != 0:
-        get_word_grads(FLAGS.custom_input, FLAGS.get_grads)
+    if FLAGS.target_sentiment != None:
+        translate(FLAGS.custom_input, FLAGS.target_sentiment)
     else:
         evaluate_sentence(FLAGS.custom_input)
 
